@@ -1,32 +1,59 @@
 #define GLFW_DLL 1
-
+#define CHANNEL_SIZE 255
 #define GL_GLEXT_PROTOTYPES
 
 #include <GLFW/glfw3.h>
 #include <GLES2/gl2.h>
 #include "../Project6/glfw-3.2.1/deps/linmath.h"
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
 
+
+
+//vertex struct
 typedef struct {
-  float Position[2];
-  float TexCoord[2];
+	float position[2];
+	float TexCoord[2];
 } Vertex;
 
-// (-1, 1)  (1, 1)
-// (-1, -1) (1, -1)
+//color struct
+typedef struct {
+	unsigned char r;
+	unsigned char g;
+	unsigned char b;
+} Color;
 
+//variables to read and color image
+FILE* sourcefp;
+char format;
+int h;
+int w;
+int mc;
+char c;
+Color* image;
+
+//fuctions to call
+void read_data_to_buffer();
+void skip_ws(FILE*);
+
+//variables to make window
 mat4x4 m, p, mvp;
 float ratio;
-float time = 0;
 int width, height;
 
-Vertex vertexes[] = {
+//create vertices for the image
+Vertex vertices[] = {
   {{1, -1}, {0.99999, 0}},
   {{1, 1},  {0.99999, 0.99999}},
-  {{-1, 1}, {0, 0.99999}}
+  {{-1, 1}, {0, 0.99999}},
+  {{-1,-1}, {0,0}}
+};
+
+//indices
+const GLubyte indices[] = {
+	0, 1, 2,
+	2, 3, 0
 };
 
 static const char* vertex_shader_text =
@@ -48,29 +75,146 @@ static const char* fragment_shader_text =
 "    gl_FragColor = texture2D(Texture, TexCoordOut);\n"
 "}\n";
 
+//error function
 static void error_callback(int error, const char* description)
 {
     fprintf(stderr, "Error: %s\n", description);
 }
 
+//key commands
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
-	if (key == GLFW_KEY_LEFT && action == GLFW_PRESS) {
-		glfwSetWindowSize(window, 100, 100);
-	}
-	if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS) {
-		glfwSetWindowSize(window, 800, 800);
-	}
-	if (key == GLFW_KEY_R && action == GLFW_PRESS) {
-		glRotated(45.0, 0.0, 0.0, 1.0);
-	}
-	if (key == GLFW_KEY_R && action == GLFW_REPEAT) {
-		glRotated(45.0, 0.0, 0.0, 1.0);
-	}
-	if (key == GLFW_KEY_R && action == GLFW_RELEASE) {
-		time = 0;
+	float centerx, tempx;
+	float centery, tempy;
+	float angle = 0.0872665;
+
+	if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+		switch (key)
+		{
+		case GLFW_KEY_ESCAPE:
+			glfwSetWindowShouldClose(window, GLFW_TRUE);
+			break;
+		case GLFW_KEY_UP: // translate up
+			vertices[0].position[1] -= 0.05;
+			vertices[1].position[1] -= 0.05;
+			vertices[2].position[1] -= 0.05;
+			vertices[3].position[1] -= 0.05;
+			break;
+		case GLFW_KEY_RIGHT: // translate right
+			vertices[0].position[0] += 0.05;
+			vertices[1].position[0] += 0.05;
+			vertices[2].position[0] += 0.05;
+			vertices[3].position[0] += 0.05;
+			break;
+		case GLFW_KEY_DOWN: // translate down
+			vertices[0].position[1] += 0.05;
+			vertices[1].position[1] += 0.05;
+			vertices[2].position[1] += 0.05;
+			vertices[3].position[1] += 0.05;
+			break;
+		case GLFW_KEY_LEFT: // translate left
+			vertices[0].position[0] -= 0.05;
+			vertices[1].position[0] -= 0.05;
+			vertices[2].position[0] -= 0.05;
+			vertices[3].position[0] -= 0.05;
+			break;
+		case GLFW_KEY_X: // scale larger
+			vertices[0].position[0] *= 1.05;
+			vertices[0].position[1] *= 1.05;
+			vertices[1].position[0] *= 1.05;
+			vertices[1].position[1] *= 1.05;
+			vertices[2].position[0] *= 1.05;
+			vertices[2].position[1] *= 1.05;
+			vertices[3].position[0] *= 1.05;
+			vertices[3].position[1] *= 1.05;
+			break;
+		case GLFW_KEY_Z: // scale smaller
+			vertices[0].position[0] *= 0.95;
+			vertices[0].position[1] *= 0.95;
+			vertices[1].position[0] *= 0.95;
+			vertices[1].position[1] *= 0.95;
+			vertices[2].position[0] *= 0.95;
+			vertices[2].position[1] *= 0.95;
+			vertices[3].position[0] *= 0.95;
+			vertices[3].position[1] *= 0.95;
+			break;
+		case GLFW_KEY_W: // shear left up, right down
+			vertices[0].position[1] += -0.05;
+			vertices[1].position[1] += -0.05;
+			vertices[2].position[1] += +0.05;
+			vertices[3].position[1] += +0.05;
+			break;
+		case GLFW_KEY_D: // shear top right, bottom left
+			vertices[0].position[0] += -0.05;
+			vertices[1].position[0] += 0.05;
+			vertices[2].position[0] += 0.05;
+			vertices[3].position[0] += -0.05;
+			break;
+		case GLFW_KEY_S: // shear right up, left down
+			vertices[0].position[1] += 0.05;
+			vertices[1].position[1] += 0.05;
+			vertices[2].position[1] += -0.05;
+			vertices[3].position[1] += -0.05;
+			break;
+		case GLFW_KEY_A: // shear bottom right, top left
+			vertices[0].position[0] += 0.05;
+			vertices[1].position[0] += -0.05;
+			vertices[2].position[0] += -0.05;
+			vertices[3].position[0] += 0.05;
+			break;
+		case GLFW_KEY_E: // rotate clockwise
+			centerx = (vertices[0].position[0] + vertices[2].position[0]) / 2;
+			centery = (vertices[0].position[1] + vertices[2].position[1]) / 2;
+
+			tempx = ((vertices[0].position[0] - centerx) * cos(angle) - (vertices[0].position[1] - centery) * sin(angle)) + centerx;
+			tempy = ((vertices[0].position[0] - centerx) * sin(angle) + (vertices[0].position[1] - centery) * cos(angle)) + centery;
+			vertices[0].position[0] = tempx;
+			vertices[0].position[1] = tempy;
+
+			tempx = ((vertices[1].position[0] - centerx) * cos(angle) - (vertices[1].position[1] - centery) * sin(angle)) + centerx;
+			tempy = ((vertices[1].position[0] - centerx) * sin(angle) + (vertices[1].position[1] - centery) * cos(angle)) + centery;
+			vertices[1].position[0] = tempx;
+			vertices[1].position[1] = tempy;
+
+			tempx = ((vertices[2].position[0] - centerx) * cos(angle) - (vertices[2].position[1] - centery) * sin(angle)) + centerx;
+			tempy = ((vertices[2].position[0] - centerx) * sin(angle) + (vertices[2].position[1] - centery) * cos(angle)) + centery;
+			vertices[2].position[0] = tempx;
+			vertices[2].position[1] = tempy;
+
+			tempx = ((vertices[3].position[0] - centerx) * cos(angle) - (vertices[3].position[1] - centery) * sin(angle)) + centerx;
+			tempy = ((vertices[3].position[0] - centerx) * sin(angle) + (vertices[3].position[1] - centery) * cos(angle)) + centery;
+			vertices[3].position[0] = tempx;
+			vertices[3].position[1] = tempy;
+			break;
+		case GLFW_KEY_Q: // rotate counter clockwise
+			centerx = (vertices[0].position[0] + vertices[2].position[0]) / 2;
+			centery = (vertices[0].position[1] + vertices[2].position[1]) / 2;
+
+			tempx = ((vertices[0].position[0] - centerx) * cos(-angle) - (vertices[0].position[1] - centery) * sin(-angle)) + centerx;
+			tempy = ((vertices[0].position[0] - centerx) * sin(-angle) + (vertices[0].position[1] - centery) * cos(-angle)) + centery;
+			vertices[0].position[0] = tempx;
+			vertices[0].position[1] = tempy;
+
+			tempx = ((vertices[1].position[0] - centerx) * cos(-angle) - (vertices[1].position[1] - centery) * sin(-angle)) + centerx;
+			tempy = ((vertices[1].position[0] - centerx) * sin(-angle) + (vertices[1].position[1] - centery) * cos(-angle)) + centery;
+			vertices[1].position[0] = tempx;
+			vertices[1].position[1] = tempy;
+
+			tempx = ((vertices[2].position[0] - centerx) * cos(-angle) - (vertices[2].position[1] - centery) * sin(-angle)) + centerx;
+			tempy = ((vertices[2].position[0] - centerx) * sin(-angle) + (vertices[2].position[1] - centery) * cos(-angle)) + centery;
+			vertices[2].position[0] = tempx;
+			vertices[2].position[1] = tempy;
+
+			tempx = ((vertices[3].position[0] - centerx) * cos(-angle) - (vertices[3].position[1] - centery) * sin(-angle)) + centerx;
+			tempy = ((vertices[3].position[0] - centerx) * sin(-angle) + (vertices[3].position[1] - centery) * cos(-angle)) + centery;
+			vertices[3].position[0] = tempx;
+			vertices[3].position[1] = tempy;
+			break;
+		default: //checks if invalid key is pressed 
+			if (action != GLFW_REPEAT)
+				printf("Invalid key: '%c'.\n", key);
+			break;
+		}
 	}
 }
 
@@ -93,151 +237,237 @@ void glCompileShaderOrDie(GLuint shader) {
   }
 }
 
-// 4 x 4 image..
-unsigned char image[] = {
-  255, 0, 0, 
-  255, 0, 0, 
-  255, 0, 0, 
-  255, 0, 0,
-
-  0, 255, 0, 
-  0, 255, 0, 
-  0, 255, 0, 
-  0, 255, 0, 
-
-  0, 0, 255, 
-  0, 0, 255, 
-  0, 0, 255, 
-  0, 0, 255, 
-
-  255, 0, 255, 
-  255, 0, 255, 
-  255, 0, 255, 
-  255, 0, 255 
-};
-
-int main(void)
+int main(int argc, char** argv)
 {
-    GLFWwindow* window;
-    GLuint vertex_buffer, vertex_shader, fragment_shader, program;
-    GLint mvp_location, vpos_location, vcol_location;
+	// check for correct number of inputs
+	if (argc != 2) {
+		fprintf(stderr, "Error: Arguments should be in format: 'format' 'source' 'dest'.");
+		return(1);
+	}
 
-    glfwSetErrorCallback(error_callback);
+	// open source file
+	sourcefp = fopen(argv[1], "rb");
 
-    if (!glfwInit())
-        exit(EXIT_FAILURE);
+	// check that source exists
+	if (!sourcefp) {
+		fprintf(stderr, "Error: File not found.");
+		return(1);
+	}
+
+	skip_ws(sourcefp);
+
+	// checks that source is either P3 or P6
+	if (fgetc(sourcefp) != 'P') {
+		fprintf(stderr, "Error: Invalid image format. '%s' needs to be either 'P3' or 'P6'.", argv[1]);
+		return(1);
+	}
+	// saves input format
+	format = fgetc(sourcefp);
+	if (format != '3' && format != '6') {
+		fprintf(stderr, "Error: Invalid image format. '%s' needs to be either 'P3' or 'P6'.", argv[1]);
+		return(1);
+	}
+
+	// initialize c and move through whitespace
+	skip_ws(sourcefp);
+	c = fgetc(sourcefp);
+
+	// check for comments
+	while (c == '#') {
+		while (c != '\n')
+			c = fgetc(sourcefp);
+
+		while (isspace(c))
+			c = fgetc(sourcefp);
+	}
+
+	ungetc(c, sourcefp);
+
+	// get width and height
+	fscanf(sourcefp, "%d", &w);
+	fscanf(sourcefp, "%d", &h);
 	
+	// check width and height
+	if (h < 1 || w < 1) {
+		fprintf(stderr, "Error: Invalid dimensions.");
+		return(1);
+	}
+
+	// get channel size
+	fscanf(sourcefp, "%d", &mc);
+	// check channel size
+	if (mc != CHANNEL_SIZE) {
+		fprintf(stderr, "Error: Channel size must be 8 bits.");
+		return(1);
+	}
+	//buffer for the image color
+	image = malloc(sizeof(Color)*h*w);
+
+	// skip white space before data is read
+	fgetc(sourcefp);
+	read_data_to_buffer();
+	// close source
+	fclose(sourcefp);
+
+	GLFWwindow* window;
+	GLuint vertex_buffer, vertex_shader, fragment_shader, program;
+	GLuint index_buffer;
+	GLint mvp_location, vpos_location, vcol_location;
+
+	glfwSetErrorCallback(error_callback);
+
+	if (!glfwInit())
+		exit(EXIT_FAILURE);
+
 	glfwDefaultWindowHints();
 	glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 
-    window = glfwCreateWindow(640, 480, "Keystrokes", NULL, NULL);
-    if (!window)
-    {
-        glfwTerminate();
-        exit(EXIT_FAILURE);
-    }
+	window = glfwCreateWindow(w, h, "ezview", NULL, NULL);
+	if (!window) {
+		glfwTerminate();
+		exit(EXIT_FAILURE);
+	}
 
-    glfwSetKeyCallback(window, key_callback);
+	glfwSetKeyCallback(window, key_callback);
 
-    glfwMakeContextCurrent(window);
-    // gladLoadGLLoader((GLADloadproc) glfwGetProcAddress);
-    glfwSwapInterval(1);
+	glfwMakeContextCurrent(window);
+	// gladLoadGLLoader((GLADloadproc) glfwGetProcAddress);
+	glfwSwapInterval(1);
 
-    // NOTE: OpenGL error checks have been omitted for brevity
+	// NOTE: OpenGL error checks have been omitted for brevity
 
-    glGenBuffers(1, &vertex_buffer);
-    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertexes), vertexes, GL_STATIC_DRAW);
+	glGenBuffers(1, &vertex_buffer);
+	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertex_shader, 1, &vertex_shader_text, NULL);
-    glCompileShaderOrDie(vertex_shader);
+	glGenBuffers(1, &index_buffer);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, index_buffer);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
-    fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragment_shader, 1, &fragment_shader_text, NULL);
-    glCompileShaderOrDie(fragment_shader);
+	vertex_shader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vertex_shader, 1, &vertex_shader_text, NULL);
+	glCompileShaderOrDie(vertex_shader);
 
-    program = glCreateProgram();
-    glAttachShader(program, vertex_shader);
-    glAttachShader(program, fragment_shader);
-    glLinkProgram(program);
-    // more error checking! glLinkProgramOrDie!
+	fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fragment_shader, 1, &fragment_shader_text, NULL);
+	glCompileShaderOrDie(fragment_shader);
 
-    mvp_location = glGetUniformLocation(program, "MVP");
-    assert(mvp_location != -1);
+	program = glCreateProgram();
+	glAttachShader(program, vertex_shader);
+	glAttachShader(program, fragment_shader);
+	glLinkProgram(program);
+	// more error checking! glLinkProgramOrDie!
 
-    vpos_location = glGetAttribLocation(program, "vPos");
-    assert(vpos_location != -1);
+	mvp_location = glGetUniformLocation(program, "MVP");
+	assert(mvp_location != -1);
 
-    GLint texcoord_location = glGetAttribLocation(program, "TexCoordIn");
-    assert(texcoord_location != -1);
+	vpos_location = glGetAttribLocation(program, "vPos");
+	assert(vpos_location != -1);
 
-    GLint tex_location = glGetUniformLocation(program, "Texture");
-    assert(tex_location != -1);
+	GLint texcoord_location = glGetAttribLocation(program, "TexCoordIn");
+	assert(texcoord_location != -1);
 
-    glEnableVertexAttribArray(vpos_location);
-    glVertexAttribPointer(vpos_location,
-			  2,
-			  GL_FLOAT,
-			  GL_FALSE,
-                          sizeof(Vertex),
-			  (void*) 0);
+	GLint tex_location = glGetUniformLocation(program, "Texture");
+	assert(tex_location != -1);
 
-    glEnableVertexAttribArray(texcoord_location);
-    glVertexAttribPointer(texcoord_location,
-			  2,
-			  GL_FLOAT,
-			  GL_FALSE,
-                          sizeof(Vertex),
-			  (void*) (sizeof(float) * 2));
-    
-    int image_width = 4;
-    int image_height = 4;
+	glEnableVertexAttribArray(vpos_location);
+	glEnableVertexAttribArray(texcoord_location);
 
-    GLuint texID;
-    glGenTextures(1, &texID);
-    glBindTexture(GL_TEXTURE_2D, texID);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	GLuint texID;
+	glGenTextures(1, &texID);
+	glBindTexture(GL_TEXTURE_2D, texID);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image_width, image_height, 0, GL_RGB, 
-		 GL_UNSIGNED_BYTE, image);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texID);
-    glUniform1i(tex_location, 0);
+	while (!glfwWindowShouldClose(window)) {
+		glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+		float ratio;
+		int width, height;
+		mat4x4 m, p, mvp;
 
-    while (!glfwWindowShouldClose(window))
-    {            
-
-        glfwGetFramebufferSize(window, &width, &height);
+		glfwGetFramebufferSize(window, &width, &height);
 		ratio = width / (float)height;
-		
+
+		glViewport(0, 0, width, height);
+		glClear(GL_COLOR_BUFFER_BIT);
+
 		mat4x4_identity(m);
-		mat4x4_rotate_Z(m, m, time += .1);
-		mat4x4_ortho(p, -ratio, ratio, -1.f, 1.f, 1.f, -1.f);
+		mat4x4_ortho(p, -ratio, ratio, 1.f, -1.f, -1.f, 1.f);
 		mat4x4_mul(mvp, p, m);
 
-        glViewport(0, 0, width, height);
-        glClear(GL_COLOR_BUFFER_BIT);
-		
-        
+		glUseProgram(program);
+		glUniformMatrix4fv(mvp_location, 1, GL_FALSE, (const GLfloat*)mvp);
 
-        glUseProgram(program);
-        glUniformMatrix4fv(mvp_location, 1, GL_FALSE, (const GLfloat*) mvp);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+		glVertexAttribPointer(vpos_location, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
+		glVertexAttribPointer(texcoord_location, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)(sizeof(float) * 2));
 
-        glfwSwapBuffers(window);
-        glfwPollEvents();
-    }
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, texID);
+		glUniform1i(tex_location, 0);
 
-    glfwDestroyWindow(window);
+		glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(GLubyte), GL_UNSIGNED_BYTE, 0);
 
-    glfwTerminate();
-    exit(EXIT_SUCCESS);
+		glfwSwapBuffers(window);
+		glfwSetKeyCallback(window, key_callback);
+		glfwPollEvents();
+	}
+
+	glfwDestroyWindow(window);
+
+	glfwTerminate();
+	exit(EXIT_SUCCESS);
+}
+// skips white space in file
+void skip_ws(FILE* json)
+{
+    int c = fgetc(json);
+    
+    while(isspace(c))
+        c = fgetc(json);
+    
+    ungetc(c, json);
+}
+
+
+// reads data from input file into buffer
+void read_data_to_buffer()
+{
+	Color color;
+
+	// if input is P3
+	if (format == '3') {
+		for (int i = 0; i<(h*w); i++) {
+			int temp;
+			// reads chars into Color color's rgb spots
+			fscanf(sourcefp, "%d", &temp);
+			color.r = (unsigned char)temp;
+
+			fscanf(sourcefp, "%d", &temp);
+			color.g = (unsigned char)temp;
+
+			fscanf(sourcefp, "%d", &temp);
+			color.b = (unsigned char)temp;
+			// puts Color into image buffer
+			image[i] = color;
+		}
+
+		// if input is P6
+	}
+	else {
+		for (int i = 0; i<(h*w); i++) {
+			// reads chars into Color color's rgb spots
+			color.r = fgetc(sourcefp);
+			color.g = fgetc(sourcefp);
+			color.b = fgetc(sourcefp);
+			// puts Color into image buffer
+			image[i] = color;
+		}
+	}
 }
 
 //! [code]
