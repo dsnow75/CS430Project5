@@ -1,2 +1,2 @@
 all:
-	CL /MD /I. *.lib texdemo.c
+	CL /MD /I. *.lib ezview.c
